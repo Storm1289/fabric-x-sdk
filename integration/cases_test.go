@@ -329,10 +329,7 @@ func testAddLog(t *testing.T, s *testSetup) {
 		t.Fatalf("marshal logs: %v", err)
 	}
 
-	inv, err := endorsement.NewInvocation(s.signer, s.channel, s.namespace, "1.0", [][]byte{[]byte("invoke")})
-	if err != nil {
-		t.Fatalf("NewInvocation: %v", err)
-	}
+	inv := s.newInvocation(t, [][]byte{[]byte("invoke")})
 	var responses []*peer.ProposalResponse
 	for _, b := range s.builders {
 		resp, err := b.Endorse(inv, endorsement.Success(sim.Result(), eventBytes, nil))
@@ -392,10 +389,7 @@ func testInputArgsAndEvents(t *testing.T, s *testSetup) {
 	args := [][]byte{[]byte("invoke"), []byte("arg1"), []byte("arg2")}
 	eventPayload := []byte(`{"type":"Transfer"}`)
 
-	inv, err := endorsement.NewInvocation(s.signer, s.channel, s.namespace, "1.0", args)
-	if err != nil {
-		t.Fatalf("NewInvocation: %v", err)
-	}
+	inv := s.newInvocation(t, args)
 
 	var responses []*peer.ProposalResponse
 	for _, b := range s.builders {
@@ -452,10 +446,7 @@ func testNotifications(t *testing.T, s *testSetup) {
 	key := t.Name() + "/" + rand.Text()
 
 	// Build the endorsement in scope so we can access inv.TxID before submitting.
-	inv, err := endorsement.NewInvocation(s.signer, s.channel, s.namespace, "1.0", [][]byte{[]byte("invoke")})
-	if err != nil {
-		t.Fatalf("NewInvocation: %v", err)
-	}
+	inv := s.newInvocation(t, [][]byte{[]byte("invoke")})
 	var responses []*peer.ProposalResponse
 	for _, b := range s.builders {
 		resp, err := b.Endorse(inv, endorsement.Success(blocks.ReadWriteSet{
@@ -531,10 +522,7 @@ func testStreamAllTransactions(t *testing.T, s *testSetup) {
 	key := t.Name() + "/" + rand.Text()
 	args := [][]byte{[]byte("invoke"), []byte("arg1")}
 
-	inv, err := endorsement.NewInvocation(s.signer, s.channel, s.namespace, "1.0", args)
-	if err != nil {
-		t.Fatalf("NewInvocation: %v", err)
-	}
+	inv := s.newInvocation(t, args)
 	var responses []*peer.ProposalResponse
 	for _, b := range s.builders {
 		resp, err := b.Endorse(inv, endorsement.Success(blocks.ReadWriteSet{

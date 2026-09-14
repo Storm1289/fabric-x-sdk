@@ -127,7 +127,7 @@ type testSetup struct {
 	networkType           string // "fabric" or "fabric-x"
 	localDB               *state.VersionedDB
 	monotonicVersions     bool
-	signer                sdk.Signer
+	invocations           endorsement.InvocationBuilder
 	builders              []endorsement.Builder
 	submitter             *network.Submitter
 	capture               *captureHandler
@@ -304,12 +304,14 @@ func newSetup(t *testing.T, networkType string, cfg config) *testSetup {
 	capture := &captureHandler{}
 
 	var builder endorsement.Builder
+	var invocations endorsement.InvocationBuilder
 	var submitter *network.Submitter
 	var sync *network.Synchronizer
 	var fxPeer *nfabx.Peer
 	switch networkType {
 	case "fabric":
 		builder = efab.NewEndorsementBuilder(signer)
+		invocations = efab.NewInvocationBuilder(signer)
 		sync, err = nfab.NewSynchronizer(localDB, cfg.Channel, cfg.Peer, signer, log, localDB, capture)
 		if err != nil {
 			t.Fatalf("NewSynchronizaer: %v", err)
@@ -317,6 +319,7 @@ func newSetup(t *testing.T, networkType string, cfg config) *testSetup {
 		submitter, err = nfab.NewSubmitter(t.Context(), cfg.Orderers, signer, 0, log)
 	case "fabric-x":
 		builder = efabx.NewEndorsementBuilder(signer)
+		invocations = efabx.NewInvocationBuilder(signer)
 		fxPeer, err = nfabx.NewPeer(cfg.Peer, cfg.Channel, signer)
 		if err != nil {
 			t.Fatalf("NewPeer: %v", err)
@@ -347,7 +350,7 @@ func newSetup(t *testing.T, networkType string, cfg config) *testSetup {
 		localDB:           localDB,
 		monotonicVersions: monotonicVersions,
 		networkType:       networkType,
-		signer:            signer,
+		invocations:       invocations,
 		builders:          []endorsement.Builder{builder},
 		submitter:         submitter,
 		capture:           capture,
@@ -373,7 +376,7 @@ func waitUntilSynced(t *testing.T, sync *network.Synchronizer, timeout time.Dura
 }
 
 func (s *testSetup) endorseAndSubmit(ctx context.Context, rws blocks.ReadWriteSet) error {
-	inv, err := endorsement.NewInvocation(s.signer, s.channel, s.namespace, "1.0", [][]byte{[]byte("invoke")})
+	inv, err := s.invocations.NewInvocation(s.channel, s.namespace, "1.0", [][]byte{[]byte("invoke")})
 	if err != nil {
 		return fmt.Errorf("NewInvocation: %w", err)
 	}
@@ -392,12 +395,18 @@ func (s *testSetup) endorseAndSubmit(ctx context.Context, rws blocks.ReadWriteSe
 
 // endorse builds a proposal, applies endr's result function with every builder,
 // and returns the combined sdk.Endorsement (one response per builder).
-func (s *testSetup) endorse(t *testing.T, endr *localEndorser, args [][]byte) sdk.Endorsement {
+func (s *testSetup) newInvocation(t *testing.T, args [][]byte) endorsement.Invocation {
 	t.Helper()
-	inv, err := endorsement.NewInvocation(s.signer, s.channel, s.namespace, "1.0", args)
+	inv, err := s.invocations.NewInvocation(s.channel, s.namespace, "1.0", args)
 	if err != nil {
 		t.Fatalf("NewInvocation: %v", err)
 	}
+	return inv
+}
+
+func (s *testSetup) endorse(t *testing.T, endr *localEndorser, args [][]byte) sdk.Endorsement {
+	t.Helper()
+	inv := s.newInvocation(t, args)
 	result := endr.result(inv)
 	var responses []*peer.ProposalResponse
 	for _, b := range s.builders {

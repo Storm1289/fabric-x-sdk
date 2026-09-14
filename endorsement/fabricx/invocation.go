@@ -18,15 +18,24 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// nonceSize matches endorsement.NewInvocation, so transaction ids are computed
+// nonceSize matches the Fabric builder, so transaction ids are computed
 // over the same input width on both paths.
 const nonceSize = 24
 
+// NewInvocationBuilder returns an InvocationBuilder that produces header-only
+// Fabric-X invocations.
+func NewInvocationBuilder(signer sdk.Signer) InvocationBuilder {
+	return InvocationBuilder{signer: signer}
+}
+
+// InvocationBuilder creates Fabric-X-format invocations from a signer.
+type InvocationBuilder struct {
+	signer sdk.Signer
+}
+
 // NewInvocation builds an invocation for the Fabric-X path. It carries only the
 // header, leaving out the proposal payload, the proposal hash and the chaincode
-// header extension, none of which a Fabric-X envelope reads. Use
-// endorsement.NewInvocation for Fabric, where the peer needs the full proposal
-// and the hash is part of the endorsement.
+// header extension, none of which a Fabric-X envelope reads.
 //
 // Every call mints a fresh nonce and transaction id. Under a multi-endorser
 // policy, build the invocation once and hand the same one to every endorser:
@@ -37,8 +46,8 @@ const nonceSize = 24
 // The result is not a proposal an endorser can parse. endorsement.Parse reads
 // the proposal payload, deliberately absent here, so this serves the local
 // submit path rather than a request to a remote endorser.
-func NewInvocation(signer sdk.Signer, channel, namespace, nsVersion string, args [][]byte) (endorsement.Invocation, error) {
-	creator, err := signer.Serialize()
+func (b InvocationBuilder) NewInvocation(channel, namespace, nsVersion string, args [][]byte) (endorsement.Invocation, error) {
+	creator, err := b.signer.Serialize()
 	if err != nil {
 		return endorsement.Invocation{}, err
 	}

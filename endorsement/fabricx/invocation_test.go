@@ -28,7 +28,7 @@ import (
 
 func newInvocation(t *testing.T) endorsement.Invocation {
 	t.Helper()
-	inv, err := NewInvocation(fixedSigner{}, "mychannel", "myns", "v1", [][]byte{[]byte("fn"), []byte("arg")})
+	inv, err := NewInvocationBuilder(fixedSigner{}).NewInvocation("mychannel", "myns", "v1", [][]byte{[]byte("fn"), []byte("arg")})
 	if err != nil {
 		t.Fatalf("NewInvocation failed: %v", err)
 	}
@@ -142,7 +142,7 @@ func (failingSigner) Sign(_ []byte) ([]byte, error) { return nil, errors.New("si
 func (failingSigner) Serialize() ([]byte, error)    { return nil, errors.New("no identity") }
 
 func TestNewInvocation_SerializeError(t *testing.T) {
-	_, err := NewInvocation(failingSigner{}, "mychannel", "myns", "v1", nil)
+	_, err := NewInvocationBuilder(failingSigner{}).NewInvocation("mychannel", "myns", "v1", nil)
 	if err == nil {
 		t.Fatal("expected an error when the signer cannot serialize")
 	}
@@ -308,7 +308,7 @@ func TestNewInvocation_EmptyInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inv, err := NewInvocation(fixedSigner{}, tt.channel, tt.namespace, tt.nsVersion, tt.args)
+			inv, err := NewInvocationBuilder(fixedSigner{}).NewInvocation(tt.channel, tt.namespace, tt.nsVersion, tt.args)
 			if err != nil {
 				t.Fatalf("NewInvocation: %v", err)
 			}
@@ -335,7 +335,7 @@ func TestNewInvocation_EmptyInputs(t *testing.T) {
 
 func TestNewInvocation_LongAndUnicodeNamespace(t *testing.T) {
 	ns := strings.Repeat("ünïcödé-ns-", 40)
-	inv, err := NewInvocation(fixedSigner{}, "채널", ns, "v1", [][]byte{[]byte("大きい")})
+	inv, err := NewInvocationBuilder(fixedSigner{}).NewInvocation("채널", ns, "v1", [][]byte{[]byte("大きい")})
 	if err != nil {
 		t.Fatalf("NewInvocation: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestNewInvocation_ConcurrentUniqueness(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			inv, err := NewInvocation(fixedSigner{}, "ch", "ns", "v1", nil)
+			inv, err := NewInvocationBuilder(fixedSigner{}).NewInvocation("ch", "ns", "v1", nil)
 			if err != nil {
 				t.Errorf("NewInvocation: %v", err)
 				return

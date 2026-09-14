@@ -13,7 +13,6 @@ SPDX-License-Identifier: Apache-2.0
 package endorsement
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,13 +21,18 @@ import (
 	"github.com/hyperledger/fabric-protos-go-apiv2/common"
 	"github.com/hyperledger/fabric-protos-go-apiv2/peer"
 	"github.com/hyperledger/fabric-x-common/protoutil"
-	sdk "github.com/hyperledger/fabric-x-sdk"
 	"github.com/hyperledger/fabric-x-sdk/blocks"
 )
 
 // Builder creates the signed ProposalResponse.
 type Builder interface {
 	Endorse(in Invocation, res ExecutionResult) (*peer.ProposalResponse, error)
+}
+
+// InvocationBuilder creates an Invocation. Implementations live next to the
+// EndorsementBuilder in each backend; their constructors take a signer.
+type InvocationBuilder interface {
+	NewInvocation(channel, namespace, nsVersion string, args [][]byte) (Invocation, error)
 }
 
 // Invocation instructs the endorser to execute a transaction.
@@ -85,64 +89,6 @@ func Success(rws blocks.ReadWriteSet, event []byte, payload []byte) ExecutionRes
 		Message: "OK",
 		Payload: payload,
 	}
-}
-
-// NewInvocation creates an Invocation directly from a signer, channel, namespace, chaincode
-// version and args. For Fabric, nsVersion must match the namespace's approved chaincode version,
-// or the peer rejects the resulting proposal as INVALID_CHAINCODE.
-func NewInvocation(signer sdk.Signer, channel, namespace, nsVersion string, args [][]byte) (Invocation, error) {
-	creator, err := signer.Serialize()
-	if err != nil {
-		return Invocation{}, err
-	}
-
-	nonce := make([]byte, 24)
-	if _, err := rand.Read(nonce); err != nil {
-		// rand.Read uses operating system APIs that are documented to never
-		// return an error on all but legacy Linux systems.
-		panic(err)
-	}
-
-	txID := protoutil.ComputeTxID(nonce, creator)
-	ccid := &peer.ChaincodeID{Name: namespace, Version: nsVersion}
-	proposal, _, err := protoutil.CreateChaincodeProposalWithTxIDNonceAndTransient(
-		txID,
-		common.HeaderType_ENDORSER_TRANSACTION,
-		channel,
-		&peer.ChaincodeInvocationSpec{
-			ChaincodeSpec: &peer.ChaincodeSpec{
-				Type:        peer.ChaincodeSpec_CAR,
-				ChaincodeId: ccid,
-				Input:       &peer.ChaincodeInput{Args: args},
-			},
-		},
-		nonce,
-		creator,
-		nil,
-	)
-	if err != nil {
-		return Invocation{}, err
-	}
-
-	hdr, err := protoutil.UnmarshalHeader(proposal.Header)
-	if err != nil {
-		return Invocation{}, err
-	}
-	propHash, err := protoutil.GetProposalHash1(hdr, proposal.Payload)
-	if err != nil {
-		return Invocation{}, err
-	}
-
-	return Invocation{
-		TxID:         txID,
-		Nonce:        nonce,
-		Creator:      creator,
-		Args:         args,
-		CCID:         ccid,
-		Channel:      channel,
-		Proposal:     proposal,
-		ProposalHash: propHash,
-	}, nil
 }
 
 // Parse extracts the fields that are relevant for endorsement from a SignedProposal.
