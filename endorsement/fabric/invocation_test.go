@@ -9,11 +9,13 @@ package fabric
 import (
 	"bytes"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	commonpb "github.com/hyperledger/fabric-protos-go-apiv2/common"
 	"github.com/hyperledger/fabric-x-common/protoutil"
+	"github.com/hyperledger/fabric-x-sdk/blocks"
 	"github.com/hyperledger/fabric-x-sdk/endorsement"
 )
 
@@ -120,5 +122,112 @@ func TestNewInvocation_ParseableByEndorser(t *testing.T) {
 	}
 	if parsed.Channel != inv.Channel {
 		t.Errorf("parsed channel %q does not match %q", parsed.Channel, inv.Channel)
+	}
+	if len(parsed.Args) != 2 || string(parsed.Args[0]) != "fn" || string(parsed.Args[1]) != "arg" {
+		t.Errorf("parsed args do not match: %q", parsed.Args)
+	}
+}
+
+func TestNewInvocation_NilSigner(t *testing.T) {
+	for _, b := range []InvocationBuilder{NewInvocationBuilder(nil), {}} {
+		_, err := b.NewInvocation("mychannel", "myns", "v1", nil)
+		if err == nil {
+			t.Fatal("expected an error for a nil signer")
+		}
+		if err.Error() != "nil signer" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+}
+
+func TestNewInvocation_AsInterface(t *testing.T) {
+	var b endorsement.InvocationBuilder = NewInvocationBuilder(fixedSigner{})
+	inv, err := b.NewInvocation("mychannel", "myns", "v1", [][]byte{[]byte("fn")})
+	if err != nil {
+		t.Fatalf("NewInvocation: %v", err)
+	}
+	if inv.TxID == "" || inv.Proposal == nil || len(inv.ProposalHash) == 0 {
+		t.Fatalf("interface call produced an incomplete invocation: %+v", inv)
+	}
+}
+
+func TestNewInvocation_SufficientForEndorse(t *testing.T) {
+	inv := newInvocation(t)
+	resp, err := NewEndorsementBuilder(fixedSigner{}).Endorse(inv, endorsement.Success(
+		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, nil, nil))
+	if err != nil {
+		t.Fatalf("Endorse failed: %v", err)
+	}
+	if resp.Endorsement == nil || len(resp.Payload) == 0 {
+		t.Fatal("expected a signed proposal response")
+	}
+}
+
+func TestNewInvocation_EmptyInputs(t *testing.T) {
+	tests := []struct {
+		name                          string
+		channel, namespace, nsVersion string
+		args                          [][]byte
+	}{
+		{name: "nil args", channel: "ch", namespace: "ns", nsVersion: "v1", args: nil},
+		{name: "empty args", channel: "ch", namespace: "ns", nsVersion: "v1", args: [][]byte{}},
+		{name: "empty arg entry", channel: "ch", namespace: "ns", nsVersion: "v1", args: [][]byte{{}}},
+		{name: "no channel", channel: "", namespace: "ns", nsVersion: "v1", args: [][]byte{[]byte("a")}},
+		{name: "no namespace", channel: "ch", namespace: "", nsVersion: "v1", args: [][]byte{[]byte("a")}},
+		{name: "no version", channel: "ch", namespace: "ns", nsVersion: "", args: [][]byte{[]byte("a")}},
+		{name: "all empty", channel: "", namespace: "", nsVersion: "", args: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv, err := NewInvocationBuilder(fixedSigner{}).NewInvocation(tt.channel, tt.namespace, tt.nsVersion, tt.args)
+			if err != nil {
+				t.Fatalf("NewInvocation: %v", err)
+			}
+			if inv.TxID == "" {
+				t.Error("tx id must be set even for empty inputs")
+			}
+			if inv.CCID == nil {
+				t.Fatal("CCID must never be nil, the builder dereferences it")
+			}
+			if _, err := NewEndorsementBuilder(fixedSigner{}).Endorse(inv, endorsement.Success(
+				blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, nil, nil)); err != nil {
+				t.Fatalf("Endorse: %v", err)
+			}
+		})
+	}
+}
+
+func TestNewInvocation_ConcurrentUniqueness(t *testing.T) {
+	const n = 200
+
+	var wg sync.WaitGroup
+	ids := make([]string, n)
+	nonces := make([][]byte, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			inv, err := NewInvocationBuilder(fixedSigner{}).NewInvocation("ch", "ns", "v1", nil)
+			if err != nil {
+				t.Errorf("NewInvocation: %v", err)
+				return
+			}
+			ids[i], nonces[i] = inv.TxID, inv.Nonce
+		}()
+	}
+	wg.Wait()
+
+	seenID := make(map[string]struct{}, n)
+	seenNonce := make(map[string]struct{}, n)
+	for i := range n {
+		if _, dup := seenID[ids[i]]; dup {
+			t.Fatalf("duplicate tx id at %d: %s", i, ids[i])
+		}
+		if _, dup := seenNonce[string(nonces[i])]; dup {
+			t.Fatalf("duplicate nonce at %d", i)
+		}
+		seenID[ids[i]] = struct{}{}
+		seenNonce[string(nonces[i])] = struct{}{}
 	}
 }

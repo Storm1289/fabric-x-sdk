@@ -8,6 +8,7 @@ package fabricx
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 
 	commonpb "github.com/hyperledger/fabric-protos-go-apiv2/common"
@@ -17,6 +18,8 @@ import (
 	"github.com/hyperledger/fabric-x-sdk/endorsement"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+var _ endorsement.InvocationBuilder = InvocationBuilder{}
 
 // nonceSize matches the Fabric builder, so transaction ids are computed
 // over the same input width on both paths.
@@ -47,6 +50,10 @@ type InvocationBuilder struct {
 // the proposal payload, deliberately absent here, so this serves the local
 // submit path rather than a request to a remote endorser.
 func (b InvocationBuilder) NewInvocation(channel, namespace, nsVersion string, args [][]byte) (endorsement.Invocation, error) {
+	if b.signer == nil {
+		return endorsement.Invocation{}, errors.New("nil signer")
+	}
+
 	creator, err := b.signer.Serialize()
 	if err != nil {
 		return endorsement.Invocation{}, err

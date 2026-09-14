@@ -151,6 +151,32 @@ func TestNewInvocation_SerializeError(t *testing.T) {
 	}
 }
 
+func TestNewInvocation_NilSigner(t *testing.T) {
+	for _, b := range []InvocationBuilder{NewInvocationBuilder(nil), {}} {
+		_, err := b.NewInvocation("mychannel", "myns", "v1", nil)
+		if err == nil {
+			t.Fatal("expected an error for a nil signer")
+		}
+		if err.Error() != "nil signer" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+}
+
+func TestNewInvocation_AsInterface(t *testing.T) {
+	var b endorsement.InvocationBuilder = NewInvocationBuilder(fixedSigner{})
+	inv, err := b.NewInvocation("mychannel", "myns", "v1", [][]byte{[]byte("fn")})
+	if err != nil {
+		t.Fatalf("NewInvocation: %v", err)
+	}
+	if inv.TxID == "" || inv.Proposal == nil {
+		t.Fatalf("interface call produced an incomplete invocation: %+v", inv)
+	}
+	if len(inv.Proposal.Payload) != 0 || len(inv.ProposalHash) != 0 {
+		t.Fatal("interface call must still produce a header-only invocation")
+	}
+}
+
 // TestNewInvocation_SufficientForPackaging is the test that makes the omissions
 // above safe rather than merely intentional: it runs a header-only invocation
 // all the way through the Fabric-X packager, which is the only consumer of

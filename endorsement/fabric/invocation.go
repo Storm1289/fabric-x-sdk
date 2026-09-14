@@ -8,6 +8,8 @@ package fabric
 
 import (
 	"crypto/rand"
+	"errors"
+	"fmt"
 
 	"github.com/hyperledger/fabric-protos-go-apiv2/common"
 	"github.com/hyperledger/fabric-protos-go-apiv2/peer"
@@ -15,6 +17,8 @@ import (
 	sdk "github.com/hyperledger/fabric-x-sdk"
 	"github.com/hyperledger/fabric-x-sdk/endorsement"
 )
+
+var _ endorsement.InvocationBuilder = InvocationBuilder{}
 
 // nonceSize matches the Fabric-X builder, so transaction ids are computed
 // over the same input width on both paths.
@@ -36,6 +40,10 @@ type InvocationBuilder struct {
 // version and args. nsVersion must match the namespace's approved chaincode
 // version, or the peer rejects the resulting proposal as INVALID_CHAINCODE.
 func (b InvocationBuilder) NewInvocation(channel, namespace, nsVersion string, args [][]byte) (endorsement.Invocation, error) {
+	if b.signer == nil {
+		return endorsement.Invocation{}, errors.New("nil signer")
+	}
+
 	creator, err := b.signer.Serialize()
 	if err != nil {
 		return endorsement.Invocation{}, err
@@ -43,9 +51,7 @@ func (b InvocationBuilder) NewInvocation(channel, namespace, nsVersion string, a
 
 	nonce := make([]byte, nonceSize)
 	if _, err := rand.Read(nonce); err != nil {
-		// rand.Read uses operating system APIs that are documented to never
-		// return an error on all but legacy Linux systems.
-		panic(err)
+		return endorsement.Invocation{}, fmt.Errorf("read nonce: %w", err)
 	}
 
 	txID := protoutil.ComputeTxID(nonce, creator)
