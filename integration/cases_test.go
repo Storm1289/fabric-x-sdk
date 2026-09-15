@@ -267,8 +267,6 @@ func testPointInTimeSimulation(t *testing.T, s *testSetup) {
 	prefix := t.Name() + "/" + rand.Text()
 	key := prefix + "/k"
 
-	base, _ := s.localDB.BlockNumber(ctx)
-
 	if err := s.endorseAndSubmit(ctx, blocks.ReadWriteSet{
 		Writes: []blocks.KVWrite{{Key: key, Value: []byte("v0")}},
 	}); err != nil {
@@ -276,21 +274,29 @@ func testPointInTimeSimulation(t *testing.T, s *testSetup) {
 	}
 	s.waitForKeyValue(t, key, "v0")
 
-	val, staleRWS := s.simulate(t, 0, key)
-	if string(val) != "v0" {
-		t.Fatalf("expected v0 from snapshot, got %q", val)
+	// Pin a snapshot at the height right after v0 committed.
+	snapshotBlock, err := s.localDB.BlockNumber(ctx)
+	if err != nil {
+		t.Fatalf("BlockNumber: %v", err)
 	}
-	staleRWS.Writes = []blocks.KVWrite{{Key: key, Value: []byte("v_stale")}}
 
-	// Advance key to v1 and wait for it to be committed so the stale
-	// snapshot's read version is definitely outdated when the stale RWS arrives.
+	// Advance the key past the snapshot height *before* reading it, so a read
+	// that resolved to "current" instead of the pinned height would see v1, not v0.
 	if err := s.endorseAndSubmit(ctx, blocks.ReadWriteSet{
 		Writes: []blocks.KVWrite{{Key: key, Value: []byte("v1")}},
 	}); err != nil {
 		t.Fatalf("submit v1: %v", err)
 	}
-	s.waitForBlock(t, base+2)
+	s.waitForKeyValue(t, key, "v1")
 
+	val, staleRWS := s.simulate(t, snapshotBlock, key)
+	if string(val) != "v0" {
+		t.Fatalf("snapshot at block %d: got %q, want %q (v1 has already committed by now)", snapshotBlock, val, "v0")
+	}
+	staleRWS.Writes = []blocks.KVWrite{{Key: key, Value: []byte("v_stale")}}
+
+	// Building on that stale read and submitting it must be rejected: the committed
+	// state has moved on to v1 since the snapshot was taken.
 	if err := s.endorseAndSubmit(ctx, staleRWS); err != nil {
 		t.Fatalf("submit stale rws (orderer-level success expected): %v", err)
 	}
@@ -541,7 +547,20 @@ func testStreamAllTransactions(t *testing.T, s *testSetup) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
+	// Cancel first, then wait: the streaming goroutine logs and calls t.Errorf, and
+	// neither is legal once this test has returned. Deferred calls run in reverse, so
+	// this wait happens after the cancel above.
+	streamDone := make(chan struct{})
+	defer func() {
+		select {
+		case <-streamDone:
+		case <-time.After(10 * time.Second):
+			t.Error("stream did not return within 10s of being cancelled")
+		}
+	}()
+
 	go func() {
+		defer close(streamDone)
 		if err := streamer.Stream(ctx, &notification.StreamAllRequest{
 			FilterNamespaces:     []string{s.namespace},
 			IncludeReadWriteSets: true,
@@ -586,8 +605,15 @@ type allTxCapture struct {
 	batches chan notification.AllTxBatch
 }
 
-func (c *allTxCapture) HandleBatch(_ context.Context, batch notification.AllTxBatch) error {
-	c.batches <- batch
+// HandleBatch buffers the batch for the test to inspect, dropping it if the stream is
+// being torn down. The test stops reading as soon as it has seen the batch it cares
+// about, so an unconditional send would block here once the buffer filled and would
+// keep Stream from ever returning.
+func (c *allTxCapture) HandleBatch(ctx context.Context, batch notification.AllTxBatch) error {
+	select {
+	case c.batches <- batch:
+	case <-ctx.Done():
+	}
 	return nil
 }
 
