@@ -404,7 +404,7 @@ func (s *testSetup) endorseAndSubmit(ctx context.Context, rws blocks.ReadWriteSe
 	if err != nil {
 		return fmt.Errorf("NewInvocation: %w", err)
 	}
-	result := endorsement.Success(rws, nil, nil)
+	result := endorsement.Success(rws, "", nil, nil)
 	var responses []*peer.ProposalResponse
 	for _, b := range s.builders {
 		resp, err := b.Endorse(inv, result)

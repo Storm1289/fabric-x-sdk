@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package fabric
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/hyperledger/fabric-protos-go-apiv2/ledger/rwset"
@@ -161,5 +162,16 @@ func TestEndorse_SortedOutput(t *testing.T) {
 	}
 	if kv.Writes[0].Key != "b" || kv.Writes[1].Key != "y" {
 		t.Errorf("writes not sorted: %v %v", kv.Writes[0].Key, kv.Writes[1].Key)
+	}
+}
+
+// TestEndorse_MissingEventName ensures an event without a name is rejected.
+func TestEndorse_MissingEventName(t *testing.T) {
+	in := endorsement.Invocation{TxID: "txid", Namespace: testNamespace}
+	res := endorsement.ExecutionResult{Event: []byte("myevent")}
+
+	_, err := NewEndorsementBuilder(fixedSigner{}).Endorse(in, res)
+	if !errors.Is(err, endorsement.ErrMissingEventName) {
+		t.Fatalf("expected ErrMissingEventName, got %v", err)
 	}
 }

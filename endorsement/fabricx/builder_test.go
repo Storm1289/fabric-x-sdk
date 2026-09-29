@@ -8,10 +8,12 @@ package fabricx
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/hyperledger/fabric-protos-go-apiv2/peer"
 	"github.com/hyperledger/fabric-x-common/api/applicationpb"
+	"github.com/hyperledger/fabric-x-sdk/api/metadatapb"
 	"github.com/hyperledger/fabric-x-sdk/blocks"
 	"github.com/hyperledger/fabric-x-sdk/endorsement"
 	"google.golang.org/protobuf/proto"
@@ -127,19 +129,16 @@ func TestEndorse_NsVersion(t *testing.T) {
 	}
 }
 
-// TestEndorse_MetadataFixedWidth guards against a regression where metadata
-// entries were only conditionally appended: an empty Args with a non-empty
-// Event produced a single-entry metadata slice, which DecodeMetadata's fixed
-// positions ([0]=args, [1]=events) would misread as input args instead of an
-// event. Metadata must always contain exactly two entries.
-func TestEndorse_MetadataFixedWidth(t *testing.T) {
+// TestEndorse_Metadata guards the metadata layout: a single entry at
+// metadata[0] holding a metadatapb.Metadata with all SDK-defined fields.
+func TestEndorse_Metadata(t *testing.T) {
 	in := endorsement.Invocation{
 		TxID:         "txid",
 		ProposalHash: []byte("prophash"),
-		Args:         nil,
+		Args:         [][]byte{[]byte("a"), []byte("b"), []byte("c")},
 		Namespace:    testNamespace,
 	}
-	res := endorsement.ExecutionResult{Event: []byte("myevent")}
+	res := endorsement.ExecutionResult{Event: []byte("myevent"), EventName: "Transfer", Payload: []byte("mypayload")}
 
 	resp, err := NewEndorsementBuilder(fixedSigner{}).Endorse(in, res)
 	if err != nil {
@@ -150,24 +149,40 @@ func TestEndorse_MetadataFixedWidth(t *testing.T) {
 	if err := proto.Unmarshal(resp.Payload, &tx); err != nil {
 		t.Fatalf("unmarshal Tx: %v", err)
 	}
-	if len(tx.Metadata) != 2 {
-		t.Fatalf("expected exactly 2 metadata entries, got %d", len(tx.Metadata))
+	if len(tx.Metadata) != 1 {
+		t.Fatalf("expected exactly 1 metadata entry, got %d", len(tx.Metadata))
 	}
+	var md metadatapb.Metadata
+	if err := proto.Unmarshal(tx.Metadata[0], &md); err != nil {
+		t.Fatalf("unmarshal metadata[0]: %v", err)
+	}
+	if string(md.Event) != "myevent" {
+		t.Errorf("event: got %q, want %q", md.Event, "myevent")
+	}
+	if md.EventName != "Transfer" {
+		t.Errorf("event name: got %q, want %q", md.EventName, "Transfer")
+	}
+	if string(md.Payload) != "mypayload" {
+		t.Errorf("payload: got %q, want %q", md.Payload, "mypayload")
+	}
+	if len(md.InputArgs) != len(in.Args) {
+		t.Fatalf("args len: got %d, want %d", len(md.InputArgs), len(in.Args))
+	}
+	for i, want := range in.Args {
+		if string(md.InputArgs[i]) != string(want) {
+			t.Errorf("arg %d: got %q, want %q", i, md.InputArgs[i], want)
+		}
+	}
+}
 
-	var input peer.ChaincodeInput
-	if err := proto.Unmarshal(tx.Metadata[0], &input); err != nil {
-		t.Fatalf("unmarshal ChaincodeInput: %v", err)
-	}
-	if len(input.Args) != 0 {
-		t.Errorf("expected no input args, got %v", input.Args)
-	}
+// TestEndorse_MissingEventName ensures an event without a name is rejected.
+func TestEndorse_MissingEventName(t *testing.T) {
+	in := endorsement.Invocation{TxID: "txid", Namespace: testNamespace}
+	res := endorsement.ExecutionResult{Event: []byte("myevent")}
 
-	var event peer.ChaincodeEvent
-	if err := proto.Unmarshal(tx.Metadata[1], &event); err != nil {
-		t.Fatalf("unmarshal ChaincodeEvent: %v", err)
-	}
-	if string(event.Payload) != "myevent" {
-		t.Errorf("expected event payload %q, got %q", "myevent", event.Payload)
+	_, err := NewEndorsementBuilder(fixedSigner{}).Endorse(in, res)
+	if !errors.Is(err, endorsement.ErrMissingEventName) {
+		t.Fatalf("expected ErrMissingEventName, got %v", err)
 	}
 }
 

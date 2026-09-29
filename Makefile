@@ -9,6 +9,17 @@ checks:
 vulncheck:
 	go tool govulncheck ./...
 
+# proto regenerates the Go code for api/*/*.proto. It needs protoc on the PATH;
+# protoc-gen-go is pinned as a go tool in go.mod.
+.PHONY: proto
+proto:
+	@echo "Generating protobufs..."
+	@protoc \
+		-I="$(CURDIR)" \
+		--plugin=protoc-gen-go="$(shell go tool -n protoc-gen-go)" \
+		--go_out=paths=source_relative:. \
+		$(CURDIR)/api/*/*.proto
+
 .PHONY: unit-tests
 unit-tests:
 	go test ./... -short -race -coverprofile=coverage.out -covermode=atomic

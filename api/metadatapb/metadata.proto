@@ -1,0 +1,28 @@
+/*
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
+syntax = "proto3";
+
+option go_package = "github.com/hyperledger/fabric-x-sdk/api/metadatapb";
+
+package metadatapb;
+
+// Metadata is the SDK-defined content of a Fabric-X transaction, stored
+// marshaled in Tx.metadata[0]. The rest of Tx.metadata is left for other
+// consumers.
+message Metadata {
+    // Arguments the transaction was invoked with.
+    repeated bytes input_args = 1;
+
+    // Event emitted by the execution, if any.
+    bytes event = 2;
+
+    // Name of the event; empty when there is no event.
+    string event_name = 3;
+
+    // Application payload returned by the execution.
+    bytes payload = 4;
+}

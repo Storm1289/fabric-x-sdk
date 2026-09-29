@@ -92,7 +92,7 @@ func newEndorsement(t *testing.T, client sdk.Signer) sdk.Endorsement {
 	}
 	res := endorsement.Success(blocks.ReadWriteSet{
 		Writes: []blocks.KVWrite{{Key: "a", Value: []byte("va")}},
-	}, nil, nil)
+	}, "", nil, nil)
 	resp, err := efabx.NewEndorsementBuilder(endorser).Endorse(inv, res)
 	if err != nil {
 		t.Fatalf("Endorse: %v", err)

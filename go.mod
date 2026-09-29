@@ -9,6 +9,7 @@ tool (
 	github.com/hyperledger/fabric-x/tools/cryptogen
 	github.com/hyperledger/fabric-x/tools/fxconfig
 	golang.org/x/vuln/cmd/govulncheck
+	google.golang.org/protobuf/cmd/protoc-gen-go
 )
 
 require (

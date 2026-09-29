@@ -10,12 +10,20 @@ import (
 	"testing"
 
 	"github.com/hyperledger/fabric-protos-go-apiv2/common"
-	"github.com/hyperledger/fabric-protos-go-apiv2/peer"
 	"github.com/hyperledger/fabric-x-common/api/applicationpb"
 	"github.com/hyperledger/fabric-x-common/api/committerpb"
 	sdk "github.com/hyperledger/fabric-x-sdk"
 	"google.golang.org/protobuf/proto"
 )
+
+func mustEncodeMetadata(t *testing.T, m Metadata) [][]byte {
+	t.Helper()
+	md, err := EncodeMetadata(m)
+	if err != nil {
+		t.Fatalf("EncodeMetadata: %v", err)
+	}
+	return md
+}
 
 // buildEnvelope constructs a minimal Envelope whose payload contains a
 // applicationpb.Tx with the given namespaces.
@@ -232,18 +240,9 @@ func TestParse_ReadWriteZeroVersion(t *testing.T) {
 func TestParse_Events(t *testing.T) {
 	txID := "txid-event"
 	eventPayload := []byte(`{"type":"Transfer"}`)
-	eventBytes, err := proto.Marshal(&peer.ChaincodeEvent{
-		ChaincodeId: "ns",
-		TxId:        txID,
-		EventName:   "log",
-		Payload:     eventPayload,
-	})
-	if err != nil {
-		t.Fatalf("marshal event: %v", err)
-	}
 
 	tx := &applicationpb.Tx{
-		Metadata: [][]byte{nil, eventBytes}, // no input at [0], event at [1]
+		Metadata: mustEncodeMetadata(t, Metadata{Event: eventPayload, EventName: "Transfer"}),
 		Namespaces: []*applicationpb.TxNamespace{{
 			NsId: "ns",
 			BlindWrites: []*applicationpb.Write{
@@ -259,16 +258,11 @@ func TestParse_Events(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// event bytes must be populated
-	if len(btx.Events) == 0 {
-		t.Fatal("expected Events to be set")
+	if string(btx.Event) != string(eventPayload) {
+		t.Errorf("event: got %q, want %q", btx.Event, eventPayload)
 	}
-	evt := &peer.ChaincodeEvent{}
-	if err := proto.Unmarshal(btx.Events, evt); err != nil {
-		t.Fatalf("unmarshal events: %v", err)
-	}
-	if string(evt.Payload) != string(eventPayload) {
-		t.Errorf("event payload: got %q, want %q", evt.Payload, eventPayload)
+	if btx.EventName != "Transfer" {
+		t.Errorf("event name: got %q, want %q", btx.EventName, "Transfer")
 	}
 
 	// all writes should be in NsRWS (no synthetic writes to strip)
@@ -281,13 +275,9 @@ func TestParse_Events(t *testing.T) {
 func TestParse_InputArgs(t *testing.T) {
 	txID := "txid-input"
 	args := [][]byte{[]byte("invoke"), []byte("arg1"), []byte("arg2")}
-	inputBytes, err := proto.Marshal(&peer.ChaincodeInput{Args: args})
-	if err != nil {
-		t.Fatalf("marshal input: %v", err)
-	}
 
 	tx := &applicationpb.Tx{
-		Metadata: [][]byte{inputBytes, nil}, // input at [0], no event at [1]
+		Metadata: mustEncodeMetadata(t, Metadata{InputArgs: args}),
 		Namespaces: []*applicationpb.TxNamespace{{
 			NsId: "ns",
 			BlindWrites: []*applicationpb.Write{

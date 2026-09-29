@@ -154,7 +154,7 @@ func TestNewInvocation_AsInterface(t *testing.T) {
 func TestNewInvocation_SufficientForEndorse(t *testing.T) {
 	inv := newInvocation(t)
 	resp, err := NewEndorsementBuilder(fixedSigner{}).Endorse(inv, endorsement.Success(
-		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, nil, nil))
+		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, "", nil, nil))
 	if err != nil {
 		t.Fatalf("Endorse failed: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestNewInvocation_EmptyInputs(t *testing.T) {
 				t.Error("tx id must be set even for empty inputs")
 			}
 			if _, err := NewEndorsementBuilder(fixedSigner{}).Endorse(inv, endorsement.Success(
-				blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, nil, nil)); err != nil {
+				blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, "", nil, nil)); err != nil {
 				t.Fatalf("Endorse: %v", err)
 			}
 		})

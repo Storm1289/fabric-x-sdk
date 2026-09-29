@@ -192,7 +192,7 @@ func TestNewInvocation_SufficientForPackaging(t *testing.T) {
 
 	res := endorsement.Success(blocks.ReadWriteSet{
 		Writes: []blocks.KVWrite{{Key: "a", Value: []byte("va")}},
-	}, nil, nil)
+	}, "", nil, nil)
 	resp, err := NewEndorsementBuilder(fabrictest.MockSigner{}).Endorse(inv, res)
 	if err != nil {
 		t.Fatalf("Endorse failed: %v", err)
@@ -240,7 +240,7 @@ func endorseWith(t *testing.T, mspID string, inv endorsement.Invocation) *peer.P
 	res := endorsement.Success(blocks.ReadWriteSet{
 		Reads:  []blocks.KVRead{{Key: "r", Version: &blocks.Version{BlockNum: 3}}},
 		Writes: []blocks.KVWrite{{Key: "w", Value: []byte("v")}},
-	}, []byte("event"), nil)
+	}, "ev", []byte("event"), nil)
 	resp, err := NewEndorsementBuilder(namedSigner{mspID}).Endorse(inv, res)
 	if err != nil {
 		t.Fatalf("Endorse as %s failed: %v", mspID, err)
@@ -295,7 +295,7 @@ func TestNewInvocation_DivergentEndorsersRejected(t *testing.T) {
 	org0 := endorseWith(t, "peer-org-0", inv)
 
 	diverged, err := NewEndorsementBuilder(namedSigner{"peer-org-1"}).Endorse(inv, endorsement.Success(
-		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "w", Value: []byte("different")}}}, nil, nil))
+		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "w", Value: []byte("different")}}}, "", nil, nil))
 	if err != nil {
 		t.Fatalf("Endorse failed: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestNewInvocation_EmptyInputs(t *testing.T) {
 			// The builder must survive it too: Namespace feeds the namespace and
 			// the event, and empty args must still produce two metadata entries.
 			resp, err := NewEndorsementBuilder(fabrictest.MockSigner{}).Endorse(inv, endorsement.Success(
-				blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, nil, nil))
+				blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "k", Value: []byte("v")}}}, "", nil, nil))
 			if err != nil {
 				t.Fatalf("Endorse: %v", err)
 			}
@@ -440,7 +440,7 @@ func TestNewInvocation_MustBeSharedAcrossEndorsers(t *testing.T) {
 	digest := func(inv endorsement.Invocation, mspID string, event []byte) []byte {
 		t.Helper()
 		// namedSigner returns mspID + ":" + digest, so the prefix comes back off.
-		resp, err := NewEndorsementBuilder(namedSigner{mspID}).Endorse(inv, endorsement.Success(rws, event, nil))
+		resp, err := NewEndorsementBuilder(namedSigner{mspID}).Endorse(inv, endorsement.Success(rws, "log", event, nil))
 		if err != nil {
 			t.Fatalf("Endorse: %v", err)
 		}
@@ -467,7 +467,7 @@ func TestNewInvocation_MustBeSharedAcrossEndorsers(t *testing.T) {
 func endorseNoEvent(t *testing.T, mspID string, inv endorsement.Invocation) *peer.ProposalResponse {
 	t.Helper()
 	resp, err := NewEndorsementBuilder(namedSigner{mspID}).Endorse(inv, endorsement.Success(
-		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "w", Value: []byte("v")}}}, nil, nil))
+		blocks.ReadWriteSet{Writes: []blocks.KVWrite{{Key: "w", Value: []byte("v")}}}, "", nil, nil))
 	if err != nil {
 		t.Fatalf("Endorse: %v", err)
 	}

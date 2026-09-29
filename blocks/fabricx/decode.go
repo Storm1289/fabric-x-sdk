@@ -7,24 +7,57 @@ SPDX-License-Identifier: Apache-2.0
 package fabricx
 
 import (
-	"github.com/hyperledger/fabric-protos-go-apiv2/peer"
+	"fmt"
+
 	"github.com/hyperledger/fabric-x-common/api/applicationpb"
+	"github.com/hyperledger/fabric-x-sdk/api/metadatapb"
 	"github.com/hyperledger/fabric-x-sdk/blocks"
 	"google.golang.org/protobuf/proto"
 )
 
-// DecodeMetadata extracts InputArgs and Events from the transaction metadata.
-func DecodeMetadata(metadata [][]byte) (inputArgs [][]byte, events []byte) {
-	if len(metadata) > 0 && len(metadata[0]) > 0 {
-		var input peer.ChaincodeInput
-		if err := proto.Unmarshal(metadata[0], &input); err == nil {
-			inputArgs = input.Args
-		}
+// Metadata is the SDK-defined content of a Fabric-X transaction's metadata.
+type Metadata struct {
+	Event     []byte
+	EventName string
+	Payload   []byte
+	InputArgs [][]byte
+}
+
+// EncodeMetadata marshals m into the transaction metadata. The SDK owns
+// metadata[0], which holds a metadatapb.Metadata; later entries are free for
+// other consumers. Marshaling is deterministic because every endorser of a
+// transaction has to produce the same bytes.
+func EncodeMetadata(m Metadata) ([][]byte, error) {
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(&metadatapb.Metadata{
+		InputArgs: m.InputArgs,
+		Event:     m.Event,
+		EventName: m.EventName,
+		Payload:   m.Payload,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
-	if len(metadata) > 1 && len(metadata[1]) > 0 {
-		events = metadata[1]
+	return [][]byte{b}, nil
+}
+
+// DecodeMetadata extracts the event, event name, payload, and input args from
+// metadata[0] of the transaction metadata (see EncodeMetadata). Missing or
+// undecodable metadata yields an empty Metadata, since transactions not
+// created by the SDK need not carry it.
+func DecodeMetadata(metadata [][]byte) Metadata {
+	if len(metadata) == 0 {
+		return Metadata{}
 	}
-	return inputArgs, events
+	var pm metadatapb.Metadata
+	if err := proto.Unmarshal(metadata[0], &pm); err != nil {
+		return Metadata{}
+	}
+	return Metadata{
+		Event:     pm.Event,
+		EventName: pm.EventName,
+		Payload:   pm.Payload,
+		InputArgs: pm.InputArgs,
+	}
 }
 
 // DecodeNamespaces converts Fabric-X TxNamespace protos into the SDK's
